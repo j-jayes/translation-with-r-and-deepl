@@ -1,0 +1,198 @@
+---
+title: "Translation in R"
+author: "Jonthan Jayes"
+date: "2023-10-26"
+output: gfm
+---
+
+## Purpose
+
+Translation for Jakob.
+
+### Structure
+
+We will use the [DeepL](https://www.deepl.com/docs-api) API. You need to sign up to get an API key. You get 500,000 characters per month for free. The API is very simple. You send a POST request to the API with your text, and it returns the translated text.
+
+We need to read in the text, split it into sentences, translate the sentences, put them back together, and save the translated text.
+
+We will save the file as an Excel file, with one row per sentence. Excel is good at dealing with Swedish letters, e.g. å, ä, ö.
+
+### Read in the text
+
+```{r}
+library(data.table)
+library(stringi)
+library(tidyverse)
+
+process_text <- function(file_path, chunk_size = 1000) {
+  # Validate input
+  if (!file.exists(file_path)) {
+    stop("The file path provided does not exist.")
+  }
+  
+  if (!is.numeric(chunk_size) || chunk_size <= 0) {
+    stop("The chunk size must be a positive number.")
+  }
+  
+  message("Reading the text file...")
+  raw_text <- fread(file_path, header = FALSE)
+  
+  message("Converting to a tibble with one row per line of text...")
+  raw_text_tbl <- raw_text %>% 
+    as_tibble() %>%
+    pivot_longer(everything(), names_to = "line", values_to = "line_text")
+  
+  message("Combining the text into a single string...")
+  whole_text_str <- paste(raw_text_tbl$line_text, collapse = " ")
+  
+  message("Splitting text into chunks...")
+  split_text <- function(text, chunk_size) {
+    sentences <- unlist(stri_split_boundaries(text, type = "sentence"))
+    chunks <- vector("list", length(sentences))
+  
+    chunk_text <- ""
+    chunk_count <- 1
+    
+    for (sentence in sentences) {
+      if (nchar(chunk_text) + nchar(sentence) <= chunk_size) {
+        chunk_text <- paste0(chunk_text, sentence)
+      } else {
+        chunks[[chunk_count]] <- chunk_text
+        chunk_count <- chunk_count + 1
+        chunk_text <- sentence
+      }
+    }
+    
+    chunks[[chunk_count]] <- chunk_text # Add the last chunk
+    chunks <- chunks[1:chunk_count] # Remove empty elements
+    
+    return(chunks)
+  }
+  
+  text_chunks <- split_text(whole_text_str, chunk_size)
+  
+  message("Converting to a tibble...")
+  text_tbl <- tibble(line = seq_along(text_chunks), text = text_chunks)
+  
+  message("Adding a column to show the character count for each chunk...")
+  text_tbl <- text_tbl %>%
+    unnest(text) %>%
+    mutate(char_count = str_count(text))
+  
+  message("Processing complete.")
+  return(text_tbl)
+}
+
+# Example Usage:
+# result <- process_text(here::here("data", "emigrationsutredningen.txt"))
+
+```
+
+
+
+### Translation function
+
+```{r}
+library(httr)
+library(jsonlite)
+library(dplyr)
+library(writexl)
+
+# Define function to interact with DeepL API
+translate_text <- function(text, api_key, cache_file, wait_time = 0.5) {
+  # Load existing cache
+  if (file.exists(cache_file)) {
+    cache <- fromJSON(cache_file)
+  } else {
+    cache <- list()
+  }
+  
+  # Check cache for existing translation
+  if (!is.null(cache[[text]])) {
+    return(cache[[text]])
+  }
+  
+  url <- "https://api-free.deepl.com/v2/translate"
+  headers <- add_headers(
+    `Authorization` = paste0("DeepL-Auth-Key ", api_key),
+    `Content-Type` = "application/json"
+  )
+  
+  payload <- list(
+    text = list(text),
+    target_lang = "EN"
+  )
+  json_payload <- toJSON(payload, auto_unbox = TRUE)
+  
+  response <- POST(url, headers, body = json_payload, encode = "json")
+  
+  if (http_error(response)) {
+    stop("Failed to translate text: ", content(response, "text", encoding = "UTF-8"))
+  }
+  
+  parsed_response <- content(response, as = "parsed")
+  
+  translated_text <- parsed_response$translations[[1]]$text
+
+  # After successful translation, print translated text
+  print(translated_text)
+  
+  # Update cache and save to file
+  cache[[text]] <- translated_text
+  write(toJSON(cache, auto_unbox = TRUE), cache_file)
+
+  # Wait before sending next request
+  Sys.sleep(wait_time)
+  
+  return(translated_text)
+}
+
+# Function to process and translate text
+process_and_translate_text <- function(file_path, api_key, output_file_path, 
+                                       cache_file = here::here("data", "cache", "translation_cache.json"), 
+                                       n_rows = NULL, print_output = TRUE) {
+  text_tbl <- process_text(file_path)  # Assuming process_text is defined as before
+  
+  # Subset the tibble if n_rows is provided
+  if (!is.null(n_rows)) {
+    text_tbl <- slice(text_tbl, 1:n_rows)
+  }
+  
+  message("Translating text...")
+  translated_tbl <- text_tbl %>%
+    rowwise() %>%
+    mutate(translated_text = {
+      translated <- translate_text(text, api_key, cache_file)
+      if (print_output) {
+        cat(translated, "\n")
+      }
+      translated
+    })
+
+  message("Dropping the character count column...")
+  translated_tbl <- translated_tbl %>%
+    select(-char_count)
+  
+  message("Saving to Excel file...")
+  write_xlsx(translated_tbl, output_file_path)
+  
+  message("Processing and translation complete.")
+  return(translated_tbl)
+}
+
+
+# Define your API key
+api_key <- "Your API key goes here"
+# I am using an environment variable to store my API key so that it is not pushed to GitHub.
+json_data_read <- fromJSON("env_var.json")
+env_var_read <- list2env(json_data_read)
+api_key <- env_var_read$API_KEY
+
+# Set file paths
+file_name = "emigrationsutredningen.txt"
+file_name_processed = "emigrationsutredningen_processed.xlsx"
+
+# Run the function
+result <- process_and_translate_text(here::here("data", "raw", file_name), api_key, here::here("data", "processed", file_name_processed), n_rows = 15)
+
+```
