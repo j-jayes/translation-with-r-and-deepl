@@ -4,7 +4,7 @@
 
 ### Overview
 
-This R script is designed to:
+The R script in [`src/01-translate.md`](src/01-translate.md) is designed to:
 
 1. Read a text file and process its content into chunks of text.
 2. Translate each chunk of text using the DeepL API.
@@ -73,3 +73,5 @@ result <- process_and_translate_text("input.txt", api_key, "output.xlsx", n_rows
 ```
 
 In this example, only the first 15 rows will be processed, translated text will be printed to the console, and the results will be saved to "output.xlsx".
+
+You can copy the folder structure in this repository and run the script from the root directory, or you can copy the script to your project and run it from there.
