@@ -5,8 +5,9 @@ date: "2023-10-26"
 format: gfm
 ---
 
-```{r setup, include=FALSE, echo=FALSE}
-api_key = "71f834b4-7d20-c9c7-456d-61cfcdb8facd:fx"
+```{r setup, include=FALSE}
+source(here::here("set_env.r"))
+set_api_key()
 ```
 
 ## Purpose
@@ -188,13 +189,12 @@ process_and_translate_text <- function(file_path, api_key, output_file_path,
 # Define your API key
 api_key <- "Your API key goes here"
 # I am using an environment variable to store my API key so that it is not pushed to GitHub.
+api_key <- Sys.getenv("API_KEY")
 
 # Set file paths
 file_name = "emigrationsutredningen.txt"
 file_name_processed = "emigrationsutredningen_processed.xlsx"
 
 # Run the function
-result <- process_and_translate_text(here::here("data", "raw", file_name), api_key, here::here("data", "processed", file_name_processed), n_rows = 15)
-
-
+result <- process_and_translate_text(here::here("data", "raw", file_name), api_key, here::here("data", "processed", file_name_processed), n_rows = 16)
 ```
